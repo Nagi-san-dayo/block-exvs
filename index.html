@@ -141,11 +141,15 @@ function melee(u,sub){
  if(u.st=='ms'&&u.cok&&u.mc<u.ms.m.length&&!sub){u.st='md';u.t=1;return}
  if(!ok(u)||!u.tg||u.oh||(u.md>0&&!u.ms.tm.ml))return;
  u.st='md';u.t=1.1;u.mc=sub?u.ms.m.length-1:0;u.sm=sub;u.cok=0;u.act=sub?'submelee':'melee';u.actT=.8;
- // 【追加】格闘を振った瞬間にレッドロック(距離45以下)だったかを記録
  u.mRed = (u.tg.p.distanceTo(u.p) <= 45);
 }
+
+function strike(u,t){
+ const i=u.mc, r=hurt(t,u.ms.m[i],'m',u), fin=i===u.ms.m.length-1;
+ if(!r){u.st='n';u.mc=0;return}
  u.mc=i+1;u.cok=r==1&&!fin;u.v.set(0,0,0);
  if(r==2){u.st='st';u.t=.7;u.mc=0;u.v.copy(u.f).multiplyScalar(-12)}else{u.st='ms';u.t=fin?.7:.45}
+}
 function dash(u){if(u.st=='n'&&!u.oh&&u.bst>15){u.st='dash';u.t=.3}}
 function step(u,dx,dz){if(!ok(u)||u.oh||u.bst<12||u.stepCd>0)return;u.bst-=14;u.st='step';u.t=.18;u.stepCd=.62;u.sd=V(dx,0,dz).normalize();u.act='step';u.actT=.3}
 function guard(u){if(!ok(u)||u.gcd>0)return;u.st='gd';u.t=1.3;u.gd=3;u.gcd=2.5;u.v.multiplyScalar(.2)}
@@ -173,10 +177,6 @@ function upd(u,dt){
  }else if(u.st=='step'){u.v.x=u.sd.x*42*sp;u.v.z=u.sd.z*42*sp;u.v.y*=.8;if(u.t<=0){u.st='sr';u.t=.22}}
  else if(u.st=='sr'){u.v.x*=Math.pow(.015,dt);u.v.z*=Math.pow(.015,dt);u.v.y=Math.max(u.v.y-28*dt,-16);if(u.t<=0)u.st='n'}
  else if(u.st=='md'){
-  if(!t||u.t<=0||u.bst<=0){u.st='n';u.mc=0}
-  else{const dx=t.p.x-u.p.x,dy=t.p.y-u.p.y,dz=t.p.z-u.p.z,L=Math.hypot(dx,dy,dz)||1;
-   if(L<5)strike(u,t);else{const s=u.ms.ms*sp/L;u.v.set(dx*s,dy*s,dz*s);u.bst-=14*dt}}
- }else if(u.st=='md'){
   if(!t||u.t<=0||u.bst<=0){u.st='n';u.mc=0}
   else{
    const dx=t.p.x-u.p.x,dy=t.p.y-u.p.y,dz=t.p.z-u.p.z,L=Math.hypot(dx,dy,dz)||1;
