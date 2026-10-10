@@ -41,7 +41,7 @@ const MS=[
  tf:'光の翼',tm:{sp:1.4,dm:1.1,fc:1,ml:1},
  w:[
   {n:'高エネルギーBR',d:75,a:7,r:3.5,v:105,h:.04,c:.3,k:1,s:0},
-  {n:'フラッシュエッジ2',d:55,a:2,r:4.5,v:85,h:.07,c:.6,k:2,s:.18}
+  {n:'フラッシュエッジ2',d:55,a:2,r:4.5,v:85,h:.07,c:.6,k:2,s:.18, ret:1}
  ],
  x:[
   [2.6,.1,1.4,0x1a1a24, 2.2,3.2,-.8, .4],
@@ -73,7 +73,8 @@ const MS=[
  tf:'覚醒(サイコフレーム)',tm:{sp:1.2,dm:1.1,fc:.55,ml:1}, // 時限強化中は圧倒的な弾幕を張れる
  w:[
   {n:'ビーム・マグナム',d:120,a:5,r:4.5,v:150,h:.03,c:.6,k:1,s:0},
-  {n:'一斉射撃',d:35,a:6,r:6,v:80,h:.08,c:.3,k:5,s:.2} // 5発同時発射の面制圧
+  {n:'一斉射撃',d:35,a:6,r:6,v:80,h:.08,c:.3,k:5,s:.2}, // ←末尾にカンマを追加
+  {n:'極太照射ビーム',d:45,a:1,r:12,v:0,h:0,c:1.5,k:1,s:0, bz:1} // ←追加 (bz:照射フラグ)
  ],
  x:[
   // 背部の巨大プロペラントタンク
@@ -136,7 +137,25 @@ function shoot(u,i){const w=u.ms.w[i],t=u.tg;if(!ok(u)||u.cd>0||u.am[i]<1)return
  const o=V(u.p.x,u.p.y+2.6,u.p.z).addScaledVector(u.f,2),dist=t?t.p.distanceTo(u.p):1e9,red=!!t&&dist<=45,aim=red?V(t.p.x,t.p.y+2,t.p.z).sub(o).normalize():u.f.clone();
  for(let j=0;j<w.k;j++){const d=aim.clone().applyAxisAngle(Y,(j-(w.k-1)/2)*w.s);if(w.k>1)d.y+=(R()-.5)*.1;
   const m=new T.Mesh(BG,BM[u.team]);m.scale.setScalar(w.d>100?2:1);sc.add(m);
-  B.push({m,p:o.clone(),v:d.normalize().multiplyScalar(w.v),d:w.d*tm.dm,o:u,t,h:red?w.h:0,homing:red,l:3})}}
+  B.push({m,p:o.clone(),v:d.normalize().multiplyScalar(w.v),d:w.d*tm.dm,o:u,t,h:red?w.h:0,homing:red,l:3, ret:w.ret})}}
+// 照射ビーム発射処理
+function shootBeam(u,i){
+ const w=u.ms.w[i], t=u.tg; if(!ok(u)||u.cd>0||u.am[i]<1)return;
+ const tm=u.md>0?u.ms.tm:{dm:1,fc:1};
+ u.am[i]--; u.cd=w.c*tm.fc;
+ u.st='ms'; u.t=1.2; u.v.set(0,0,0); // 発射中は足を止める
+ u.act='mainshoot'; u.actT=1.2;
+ 
+ const o=V(u.p.x,u.p.y+2.6,u.p.z).addScaledVector(u.f,2), dist=t?t.p.distanceTo(u.p):1e9, red=!!t&&dist<=45, aim=red?V(t.p.x,t.p.y+2,t.p.z).sub(o).normalize():V(u.f.x,0,u.f.z).normalize();
+ 
+ const geo=new T.CylinderGeometry(2.5,2.5,300,12); // 極太の円柱
+ geo.translate(0,150,0); geo.rotateX(Math.PI/2);
+ const mat=new T.MeshBasicMaterial({color:0xff66cc,transparent:true,opacity:0.8,blending:T.AdditiveBlending,depthWrite:false});
+ const m=new T.Mesh(geo,mat);
+ m.position.copy(o); m.lookAt(o.clone().add(aim)); sc.add(m);
+ 
+ B.push({m,p:o,v:aim,d:w.d*tm.dm,o:u,t,bz:1,l:1.2,hd:0});
+}
 function melee(u,sub){
  if(u.st=='ms'&&u.cok&&u.mc<u.ms.m.length&&!sub){u.st='md';u.t=1;return}
  if(!ok(u)||!u.tg||u.oh||(u.md>0&&!u.ms.tm.ml))return;
@@ -196,6 +215,7 @@ function upd(u,dt){
    }
   }
  }
+ else if(u.t<=0 && (u.st=='gd'||u.st=='st'||u.st=='dn'||u.st=='ms')){ u.st='n'; } // 追加: タイマー切れで通常状態へ戻す
  if(u.bst<=0){u.bst=0;u.oh=1;if(u.st=='dash'||u.st=='md')u.st='n'}
  if(!bo&&u.st!='step'&&u.st!='md'){u.bst=Math.min(100,u.bst+(gnd?(u.oh?32:45):(u.oh?16:12))*dt);if(u.bst>=100)u.oh=0}
  u.p.addScaledVector(u.v,dt);
@@ -224,15 +244,40 @@ function ai(u,dt){
 
 // ===== 弾 =====
 function bul(dt){for(let i=B.length-1;i>=0;i--){const b=B[i],t=b.t;let dead=(b.l-=dt)<=0;
- if(!dead&&b.homing&&b.h&&t&&!t.dead&&t.st!='step'){const to=V(t.p.x,t.p.y+2,t.p.z).sub(b.p),s=b.v.length();if(to.dot(b.v)>0)b.v.lerp(to.setLength(s),Math.min(1,b.h*60*dt)).setLength(s)}
- b.p.addScaledVector(b.v,dt);b.m.position.copy(b.p);
- if(!dead){if(b.p.y<0||OB.some(([x,z,r,h])=>b.p.y<h&&Math.hypot(b.p.x-x,b.p.z-z)<r))dead=1;
-  else for(const o of U)if(o.team!=b.o.team&&!o.dead&&b.p.distanceTo(V(o.p.x,o.p.y+2,o.p.z))<2.8&&hurt(o,b.d,'s',b.o)){dead=1;break}}
+ if(b.bz){
+  // 照射ビームの処理
+  if(!dead){
+   b.m.scale.set(b.l/1.2, b.l/1.2, 1); // だんだん細く消える演出
+   if((b.hd-=dt)<=0){
+    let hit=0;
+    for(const o of U)if(o.team!=b.o.team&&!o.dead){
+     const to=V(o.p.x,o.p.y+2,o.p.z).sub(b.p), dot=to.dot(b.v);
+     if(dot>0&&dot<300&&to.sub(b.v.clone().multiplyScalar(dot)).length()<4){
+      if(hurt(o,b.d,'s',b.o)) hit=1;
+     }
+    }
+    if(hit) b.hd=0.15; // 0.15秒ごとに多段ヒット
+   }
+  }
+ }else{
+  // 通常の弾・ブーメランの処理
+  if(!dead){
+   if(b.ret && b.l < 1.5){
+    const to=V(b.o.p.x,b.o.p.y+2,b.o.p.z).sub(b.p),s=b.v.length();
+    b.v.lerp(to.setLength(s),Math.min(1, 4 * dt)).setLength(s);
+   } else if(b.homing&&b.h&&t&&!t.dead&&t.st!='step'){
+    const to=V(t.p.x,t.p.y+2,t.p.z).sub(b.p),s=b.v.length();
+    if(to.dot(b.v)>0)b.v.lerp(to.setLength(s),Math.min(1,b.h*60*dt)).setLength(s);
+   }
+  }
+  b.p.addScaledVector(b.v,dt);b.m.position.copy(b.p);
+  if(!dead){if(b.p.y<0||OB.some(([x,z,r,h])=>b.p.y<h&&Math.hypot(b.p.x-x,b.p.z-z)<r))dead=1;
+   else for(const o of U)if(o.team!=b.o.team&&!o.dead&&b.p.distanceTo(V(o.p.x,o.p.y+2,o.p.z))<2.8&&hurt(o,b.d,'s',b.o)){dead=1;break}}
+ }
  if(dead){sc.remove(b.m);B.splice(i,1)}}}
-
 // ===== 入力 =====
 const K={},kd={},cons={},lt0={};
-const act={J:()=>shoot(P,0),K:()=>melee(P,0),JK:()=>melee(P,1),JL:()=>shoot(P,1),KL:()=>tf(P)};
+const act={J:()=>{if(K.KeyS&&P.ms.w[2])shootBeam(P,2);else shoot(P,0)},K:()=>melee(P,0),JK:()=>melee(P,1),JL:()=>shoot(P,1),KL:()=>tf(P)};
 function res(c,t){if(cons[c]==t||!G.run)return;
  const o=['KeyJ','KeyK','KeyL'].find(k=>k!=c&&Math.abs(kd[k]-t)<80&&cons[k]!=kd[k]);
  if(o){cons[c]=t;cons[o]=kd[o];act[[c,o].map(x=>x[3]).sort().join('')]()}
@@ -253,7 +298,7 @@ const bar=(v,m,c,w=150)=>`<span class=b style="width:${w}px"><i style="width:${C
 function hud(){const al=U.find(o=>o.team==0&&!o.isP),m=P.ms;
  $('tl').innerHTML=`味方 ${Math.max(0,G.life[0])} ${bar(G.life[0],6000,'#4af')}<br>僚機 ${al.ms.n} ${bar(al.dead?0:al.hp,al.ms.hp,'#8f8',90)}`;
  $('tr').innerHTML=`敵 ${Math.max(0,G.life[1])} ${bar(G.life[1],6000,'#f55')}`;
- $('bl').innerHTML=`<b>${m.n}</b>${P.md>0?'　['+m.tf+']':''}<br>HP ${Math.ceil(Math.max(0,P.hp))} ${bar(P.hp,m.hp,'#6f6',200)}<br>BOOST ${bar(P.bst,100,P.oh?'#f44':'#fc3',200)}${P.oh?' OVERHEAT':''}<br>J ${m.w[0].n} ×${P.am[0]}　JL ${m.w[1].n} ×${P.am[1]}<br>KL ${P.mt>0&&P.md<=0?'変形 待機'+Math.ceil(P.mt)+'秒':m.tf}`;
+ $('bl').innerHTML=`<b>${m.n}</b>${P.md>0?'　['+m.tf+']':''}<br>HP ${Math.ceil(Math.max(0,P.hp))} ${bar(P.hp,m.hp,'#6f6',200)}<br>BOOST ${bar(P.bst,100,P.oh?'#f44':'#fc3',200)}${P.oh?' OVERHEAT':''}<br>J ${m.w[0].n} ×${P.am[0]}　JL ${m.w[1].n} ×${P.am[1]}${m.w[2]?'　S+J '+m.w[2].n+' ×'+P.am[2]:''}<br>KL ${P.mt>0&&P.md<=0?'変形 待機'+Math.ceil(P.mt)+'秒':m.tf}`;
  const t=P.tg,lk=$('lk');
  if(t&&!t.dead&&!P.dead){const q=V(t.p.x,t.p.y+2,t.p.z).project(cam);
   if(q.z<1){lk.style.display='block';const lockDist=t.p.distanceTo(P.p),isRed=lockDist<=45;lk.style.borderColor=isRed?'#ff3434':'#35eaff';lk.style.boxShadow=isRed?'0 0 12px #f33':'0 0 12px #20dfff';lk.style.left=(q.x*.5+.5)*innerWidth+'px';lk.style.top=(-q.y*.5+.5)*innerHeight+'px';lk.children[0].textContent=`${isRed?'RED LOCK':'GREEN LOCK'}　${t.ms.n} HP${Math.round(t.hp/t.ms.hp*100)}% ${Math.round(lockDist)}m`}else lk.style.display='none'}
